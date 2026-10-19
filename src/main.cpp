@@ -1,53 +1,28 @@
 #include <Arduino.h>
-#include <Wire.h>
 
-#define TARGET_ADDR 0x08
-
-// Default I2C pins for ESP32-S3
-#define SDA_PIN 8
-#define SCL_PIN 9
-
-volatile bool newMsgReceived = false;
-char receivedBuffer[64];
-
-// Hardware callback executed when Controller transmits data (Master -> Slave)
-void receiveEvent(int howMany) {
-  int idx = 0;
-  while (Wire.available() && idx < 63) {
-    receivedBuffer[idx++] = (char)Wire.read();
-  }
-  receivedBuffer[idx] = '\0'; // Null-terminate the string
-  newMsgReceived = true;
-}
-
-// Hardware callback executed when Controller requests data (Slave -> Master)
-void requestEvent() {
-  // Send the received buffer back to the master
-  // Using strlen ensures we only send the actual valid characters
-  Wire.write((uint8_t*)receivedBuffer, strlen(receivedBuffer));
-}
+// Define Hardware Serial 2 pins for ESP32-S3
+#define RX_PIN 16 // Connected to NodeMCU TX (D1 / GPIO5)
+#define TX_PIN 17 // Connected to NodeMCU RX (D2 / GPIO4)
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(115200);  // For PC Serial Monitor (USB)
+  Serial2.begin(9600, SERIAL_8N1, RX_PIN, TX_PIN); // Inter-MCU Serial
+  
   delay(1000);
-
-  // Initialize Hardware I2C in Target mode on ESP32-S3
-  Wire.begin(TARGET_ADDR, SDA_PIN, SCL_PIN, 100000); // Address, SDA, SCL, Speed
-  
-  // Register callbacks for Receive and Request events
-  Wire.onReceive(receiveEvent);
-  Wire.onRequest(requestEvent);
-  
-  Serial.println("\n--- ESP32-S3 I2C Target Initialized on Address 0x08 ---");
+  Serial.println("\n--- ESP32-S3 Serial Target Initialized ---");
 }
 
 void loop() {
-  // Process and display received message outside the ISR
-  if (newMsgReceived) {
+  // Check if data is available from the Master
+  if (Serial2.available() > 0) {
+    String receivedString = Serial2.readStringUntil('\n');
+    receivedString.trim();
+
+    // Print to PC Serial Monitor via USB
     Serial.print("ESP32-S3 Received: ");
-    Serial.println(receivedBuffer);
-    newMsgReceived = false;
+    Serial.println(receivedString);
+
+    // Echo the exact string back to the Master
+    Serial2.println(receivedString);
   }
-  
-  yield(); // Keep background system tasks running
 }
